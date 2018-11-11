@@ -3,6 +3,14 @@ unit lmdb;
 
 interface
 
+uses SysUtils;
+
+type EOutOfMemory = class(Exception);
+
+{$ifdef testing}
+procedure test_midl;
+{$endif}
+
 const
   MDB_VERSION_MAJOR	= 0;
   MDB_VERSION_MINOR	= 9;
@@ -16,7 +24,6 @@ type
   mdb_mode_t = integer;
   mdb_size_t = {$ifdef fpc}SizeUint{$else}cardinal{$endif};
   mdb_filehandle_t = THANDLE;
-  MDB_dbi = cardinal;
   MDB_val =  record
 	  mv_size: mdb_size_t;
 	  mv_data: pointer;
@@ -52,9 +59,9 @@ const // Database Flags
   MDB_CREATE		  = $40000;
 
 const // Write Flags
-  MDB_NOOVERWRITE	= $10;
-  MDB_NODUPDATA	  = $20;
-  MDB_CURRENT	    = $40;
+  MDB_NOOVERWRITE	= $00010;
+  MDB_NODUPDATA	  = $00020;
+  MDB_CURRENT	    = $00040;
   MDB_RESERVE	    = $10000;
   MDB_APPEND	    = $20000;
   MDB_APPENDDUP	  = $40000;
@@ -111,20 +118,20 @@ const // Return Codes
   MDB_PROBLEM		        = (-30779);
   MDB_LAST_ERRCODE      = MDB_PROBLEM;
 
-const // TEMP TEMP
+const // ```TEMP
   ENOMEM = 100;
 
 type
+  PMDB_stats = ^MDB_stats;
   MDB_stats = record
-	  ms_psize: cardinal;
-    ms_depth: cardinal;
+	  ms_psize: mdb_size_t;
+    ms_depth: mdb_size_t;
     ms_branch_pages: mdb_size_t;
     ms_leaf_pages: mdb_size_t;
     ms_overflow_pages: mdb_size_t;
     ms_entries: mdb_size_t;
   end;
-  PMDB_stats = ^MDB_stats;
-
+  PMDB_envinfo = ^MDB_envinfo;
   MDB_envinfo = record
     me_mapaddr: pointer;
 	  me_mapsize: mdb_size_t;
@@ -133,7 +140,6 @@ type
 	  me_maxreaders: cardinal;
     me_numreaders: cardinal;
   end;
-  PMDB_envinfo = ^MDB_envinfo;
 
 function mdb_version(out major, minor, patch: integer): string;
 function mdb_strerror(err: integer): string;
@@ -152,32 +158,32 @@ type
     constructor Create; // replaces mdb_env_create
     destructor Destroy; // replaces mdb_env_close
 
-    function open(const path: string; flags: cardinal; mode: mdb_mode_t): integer;
-    function copy(const path: string): integer;
-    function copyfd(fd: mdb_filehandle_t): integer;
-    function copy2(const path: string; flags: cardinal): integer;
-    function copyfd2(fd: mdb_filehandle_t; flags: cardinal): integer;
-    function get_stat(out stat: MDB_stats): integer;
-    function info(out stat: MDB_envinfo): integer;
-    function sync(force: boolean): integer;
-    function set_flags(flags: cardinal; onoff: boolean): integer;
-    function get_flags(out flags: cardinal): integer;
-    function get_path(out path: string): integer;
-    function get_fd(out fd: mdb_filehandle_t): integer;
-    function set_mapsize(size: mdb_size_t): integer;
-    function set_maxreaders(readers: cardinal): integer;
-    function get_maxreaders(out readers: cardinal): integer;
-    function set_maxdbs(dbs: cardinal): integer;
-    function get_maxkeysize: integer;
-    function set_userctx(ctx: pointer): integer;
-    function get_userctx: pointer;
-    function set_assert(func: MDB_assert_func): integer;
+    function Open(const path: string; flags: cardinal; mode: mdb_mode_t): integer;
+    function Copy(const path: string): integer;
+    function CopyFd(fd: mdb_filehandle_t): integer;
+    function Copy2(const path: string; flags: cardinal): integer;
+    function CopyFd2(fd: mdb_filehandle_t; flags: cardinal): integer;
+    function GetStat(out stat: MDB_stats): integer;
+    function GetInfo(out stat: MDB_envinfo): integer;
+    function Sync(force: boolean): integer;
+    function SetFlags(flags: cardinal; onoff: boolean): integer;
+    function GetFlags(out flags: cardinal): integer;
+    function GetPath(out path: string): integer;
+    function GetFd(out fd: mdb_filehandle_t): integer;
+    function SetMapsize(size: mdb_size_t): integer;
+    function SetMaxreaders(readers: cardinal): integer;
+    function GetMaxreaders(out readers: cardinal): integer;
+    function SetMaxdbs(dbs: cardinal): integer;
+    function GetMaxKeySize: integer;
+    function SetUserCtx(ctx: pointer): integer;
+    function GetUserCtx: pointer;
+    function SetAssert(func: MDB_assert_func): integer;
 
     function BeginTxn(parent: TTxn; flags: cardinal; out txn: TTxn): integer; // mdb_txn_begin
 
-    function reader_list(func: MDB_msg_func; ctx: pointer): integer;
+    function ReaderList(func: MDB_msg_func; ctx: pointer): integer;
 
-    function reader_check(out dead: integer): integer;
+    function ReaderCheck(out dead: integer): integer;
   end;
 
   TTxn = class
@@ -185,11 +191,11 @@ type
     constructor Create(anEnv: TEnv; aParent: TTxn; flags: cardinal); // mdb_txn_begin
     destructor Destroy; // mdb_txn_abort
 
-    function env: TEnv;
-    function id: mdb_size_t;
-    function commit: integer;
-    procedure reset;
-    function renew: integer;
+    function Env: TEnv;
+    function ID: mdb_size_t;
+    function Commit: integer;
+    procedure Reset;
+    function ReNew: integer;
   end;
 
   TDbi = class
@@ -199,41 +205,37 @@ type
     constructor Create(txn: TTxn; const name: string; flags: cardinal); // mdb_dbi_open
     destructor Destroy; // mdb_dbi_close
 
-    function get_stat(txn: TTxn; out stat: MDB_stats): integer;
-    function get_flags(txn: TTxn; out flags: cardinal): integer;
-    function drop(txn: TTxn; del: boolean): integer;
-    function set_compare(txn: TTxn; cmp: MDB_cmp_func): integer;
-    function set_dupsort(txn: TTxn; cmp: MDB_cmp_func): integer;
-    function set_relfunc(txn: TTxn; rel: MDB_rel_func): integer;
-    function set_relctx(txn: TTxn; ctx: pointer): integer;
-    function get(txn: TTxn; const key: MDB_val; out data: MDB_val): integer;
-    function put(txn: TTxn; const key, data: MDB_val; flags: cardinal): integer;
-    function del(txn: TTxn; const key, data: MDB_val): integer;
+    function GetStat(txn: TTxn; out stat: MDB_stats): integer;
+    function GetFlags(txn: TTxn; out flags: cardinal): integer;
+    function Drop(txn: TTxn; del: boolean): integer;
+    function SetCompare(txn: TTxn; cmp: MDB_cmp_func): integer;
+    function SetDupSort(txn: TTxn; cmp: MDB_cmp_func): integer;
+    function SetRelFunc(txn: TTxn; rel: MDB_rel_func): integer;
+    function SetRelCtx(txn: TTxn; ctx: pointer): integer;
+    function Get(txn: TTxn; const key: MDB_val; out data: MDB_val): integer;
+    function Put(txn: TTxn; const key, data: MDB_val; flags: cardinal): integer;
+    function Del(txn: TTxn; const key, data: MDB_val): integer;
 
-    function cursor_open(txn: TTxn; out cursor: TCursor): integer;
+    function OpenCursor(txn: TTxn; out cursor: TCursor): integer;
 
-    function cmp(txn: TTxn; const a, b: MDB_val): integer; // mdb_cmp
-    function dcmp(txn: TTxn; const a, b: MDB_val): integer; // mdb_dcmp
+    function Cmp(txn: TTxn; const a, b: MDB_val): integer; // mdb_cmp
+    function DCmp(txn: TTxn; const a, b: MDB_val): integer; // mdb_dcmp
   end;
 
   TCursor = class
   public
     destructor Destroy; override; // mdb_cursor_close
 
-    function renew(txn: TTxn): integer;
-    function get_txn: TTxn; // mdb_cursor_txn
-    function get_dbi: TDbi;
-    function get(out key, data: MDB_val; op: MDB_cursor_op): integer;
-    function put(const key, data: MDB_val; flags: cardinal): integer;
-    function del(flags: cardinal ): integer;
-    function val_count(out count: mdb_size_t): integer; // mdb_cursor_count
+    function ReNew(txn: TTxn): integer;
+    function GetTxn: TTxn; // mdb_cursor_txn
+    function GetDbi: TDbi;
+    function Get(out key, data: MDB_val; op: MDB_cursor_op): integer;
+    function Put(const key, data: MDB_val; flags: cardinal): integer;
+    function Del(flags: cardinal ): integer;
+    function ValCount(out count: mdb_size_t): integer; // mdb_cursor_count
   end;
 
 implementation
-
-uses
-    SysUtils
-;
 
 { MIDL }
 type
@@ -317,7 +319,6 @@ begin
     end;
   end;
 end;
-
 function mdb_midl_grow(var pmidl: PMDB_IDL; num: cardinal): integer;
 begin
   ReallocMem(pmidl, sizeof(MDB_IDL) + (pmidl^.Cap + num) * sizeof(MDB_ID));
@@ -329,10 +330,7 @@ begin
     result := 0;
   end;
 end;
-
 function mdb_midl_need(var pmidl: PMDB_IDL; num: cardinal): integer;
-var
-  new: cardinal;
 begin
   result := 0;
   if (pmidl^.Count + num) > pmidl^.Cap then
@@ -364,6 +362,26 @@ begin
     Move(src.List[1], pmidl^.List[pmidl^.Count + 1], src.Count * sizeof(MDB_IDL));
     inc(pmidl^.Count, src.Count);
   end;
+end;
+
+function mdb_midl_append_range(var pmidl: PMDB_IDL; id: MDB_ID; n: cardinal): integer;
+var
+  i: cardinal;
+begin
+	if pmidl^.Count + n > pmidl^.Cap then
+  begin
+		result := mdb_midl_grow(pmidl, n or MDB_IDL_UM_MAX);
+    if result <> 0 then
+      exit;
+  end;
+  inc(pmidl^.Count, n);
+  i := pmidl^.Count;
+  for i := pmidl^.Count downto pmidl^.Count - n + 1 do
+  begin
+    pmidl^.List[i] := id;
+    inc(id);
+  end;
+  result := 0;
 end;
 
 { MDB }
