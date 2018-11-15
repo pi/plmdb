@@ -244,6 +244,19 @@ uses windows
 ;
 {$endif}
 
+{ internal types }
+type
+  pgno_t = MDB_ID;
+  txnid_t = MDB_ID;
+  indx_t  = word;
+  mdb_hash_t = uint64;
+
+const
+  P_INVALID	 = not pgno_t(0);
+  DEFAULT_MAPSIZE	= 1048576;
+  DEFAULT_READERS	= 126;
+  CACHELINE	= 64;
+
 {$ifdef windows}
 type
   NTSTATUS = integer;
@@ -284,6 +297,7 @@ var
 begin
   FillChar(o, sizeof(o), 0);
   o.Internal := st;
+  br := 0;
   GetOverlappedResult(0, o, br, false);
   result := GetLastError();
 end;
