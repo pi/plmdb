@@ -30,7 +30,7 @@ function MDB_VERSION_STRING: string;
 
 type
   mdb_mode_t = integer;
-  mdb_size_t = {$ifdef fpc}SizeUint{$else}cardinal{$endif};
+  mdb_size_t = {$ifdef cpu64}uint64{$else}cardinal{$endif};
   mdb_filehandle_t = THANDLE;
   MDB_val =  record
     mv_size: mdb_size_t;
@@ -249,19 +249,6 @@ implementation
 uses windows;
 {$endif}
 
-{ internal types }
-type
-  pgno_t = MDB_ID;
-  txnid_t = MDB_ID;
-  indx_t  = word;
-  mdb_hash_t = uint64;
-
-const
-  P_INVALID	 = not pgno_t(0);
-  DEFAULT_MAPSIZE	= 1048576;
-  DEFAULT_READERS	= 126;
-  CACHELINE	= 64;
-
 {$ifdef windows}
 type
   NTSTATUS = integer;
@@ -314,10 +301,24 @@ begin
     raise EOutOfMemory.Create('PLMDB: Out of memory');
 end;
 
-{ MIDL }
+{ internal types }
 
 type
   MDB_ID = mdb_size_t;
+  pgno_t = MDB_ID;
+  txnid_t = MDB_ID;
+  indx_t  = word;
+  mdb_hash_t = uint64;
+
+const
+  P_INVALID	 = not pgno_t(0);
+  DEFAULT_MAPSIZE	= 1048576;
+  DEFAULT_READERS	= 126;
+  CACHELINE	= 64;
+
+{ MIDL }
+
+type
   MDB_IDL = record
     Cap: mdb_size_t;
     Count: mdb_size_t;
@@ -722,3 +723,4 @@ begin
 end;
 
 end.
+
