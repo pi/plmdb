@@ -13,6 +13,12 @@ type EOutOfMemory = class(Exception);
 procedure test_midl;
 {$endif}
 
+{$ifdef CPU64}
+type ssize_t = int64;
+{$else}
+type ssize_t = integer;
+{$endif}
+
 const
   MDB_VERSION_MAJOR	= 0;
   MDB_VERSION_MINOR	= 9;
@@ -240,8 +246,7 @@ type
 implementation
 
 {$ifdef windows}
-uses windows
-;
+uses windows;
 {$endif}
 
 { internal types }
@@ -290,7 +295,7 @@ function NtMapViewOfSection(
 
 function NtClose(Handle: THandle): NTSTATUS; stdcall; external 'ntdll.dll';
 
-function TranslateNtStatusToWinError(st: integer): integer;
+function TranslateNtStatusToWinError(st: NTSTATUS): integer;
 var
   o: TOverlapped;
   br: cardinal;
@@ -599,6 +604,101 @@ begin
       end;
     end;
   end;
+end;
+
+type
+  PMDB_ID2 = ^MDB_ID2;
+  MDB_ID2 = record
+    mid: MDB_ID;
+    mptr: pointer;
+  end;
+  MDB_ID2L = record
+    Count: cardinal;
+    List: array [1..MDB_IDL_UM_MAX] of MDB_ID2;
+  end;
+  PMDB_ID2L = ^MDB_ID2L;
+
+function mdb_mid2l_search(ids: PMDB_ID2L; id: MDB_ID): cardinal;
+var
+  base: cardinal;
+  val: integer;
+	n: cardinal;
+  pivot: cardinal;
+begin
+  base := 0;
+  result := 1;
+  val := 0;
+  n := ids^.Count;
+	while n > 0 do
+  begin
+    pivot := n shr 1;
+		result := base + pivot + 1;
+    if id = ids^.List[result].mid then
+      exit
+    else if id < ids^.List[result].mid then
+    begin
+      val := -1;
+      n := pivot
+    end
+    else
+    begin
+      base := result;
+			dec(n, pivot + 1);
+    end;
+  end;
+
+	if val > 0 then
+    inc(result);
+end;
+
+function mdb_mid2l_insert(ids: PMDB_ID2L; const id: MDB_ID2): integer;
+var
+  x, i: cardinal;
+begin
+  x := mdb_mid2l_search(ids, id.mid);
+
+  if x < 1 then
+  begin
+    // internal error
+    result := -2;
+  	exit;
+  end;
+
+  if (x <= ids^.Count) and (ids^.List[x].mid = id.mid) then
+  begin
+    // duplicate
+    result := -1;
+    exit;
+  end;
+
+  if ids^.Count = MDB_IDL_UM_MAX then
+  begin
+    // too big */
+  	result := -2;
+    exit;
+  end;
+
+  inc(ids^.Count);
+  i := ids^.Count;
+  while i > x do
+  begin
+    ids^.List[i] := ids^.List[i - 1];
+    dec(i);
+  end;
+  ids^.List[x] := id;
+  result := 0;
+end;
+
+function mdb_mid2l_append(ids: PMDB_ID2L; const id: MDB_ID2): integer;
+begin
+	if (ids^.Count = MDB_IDL_UM_MAX) then
+  begin
+		result := -2;
+    exit;
+  end;
+  inc(ids^.Count);
+  ids^.List[ids^.Count] := id;
+  result := 0;
 end;
 
 { MDB }
